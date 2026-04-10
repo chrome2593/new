@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대구교통공사 냉동기 가동시간 점검 도구</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; line-height: 1.6; background-color: #f4f7f9; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #0054a6; text-align: center; border-bottom: 2px solid #0054a6; padding-bottom: 10px; }
+        .upload-section { margin: 20px 0; padding: 20px; border: 2px dashed #ccc; text-align: center; border-radius: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #0054a6; color: white; }
+        .status-normal { color: green; font-weight: bold; }
+        .status-error { color: red; font-weight: bold; background-color: #ffe6e6; }
+        .status-none { color: #999; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>냉동기 가동시간 이상 점검 시스템</h1>
+    <p>가동일보(Excel) 파일을 업로드하면 1, 2호선 냉동기 가동 상태를 분석합니다.</p>
+    
+    <div class="upload-section">
+        <input type="file" id="excelFile" accept=".xls, .xlsx" />
+        <p style="font-size: 0.9em; color: #666;">* 1호선은 '가동시간', 2호선은 '장비' 시트를 분석합니다.</p>
+    </div>
+
+    <div id="resultArea" style="display:none;">
+        <h3 id="lineTitle">분석 결과</h3>
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>역사명</th>
+                    <th>가동시간 합계(h)</th>
+                    <th>기준값(h)</th>
+                    <th>판단 결과</th>
+                </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // 사진 데이터를 기반으로 한 설정값
+    const config = {
+        line1: {
+            sheetName: "가동시간",
+            // 역사별 냉동기 셀 위치 (가공된 CSV 구조 기준 재매핑 필요)
+            // 아래 예시는 사진 1번의 기준치를 반영한 구조입니다.
+            stations: [
+                { name: "설화명곡", cells: ["E26", "F26"], limit: 12 },
+                { name: "화원", cells: ["G26", "H26"], limit: 12 },
+                { name: "대곡", cells: ["I26", "J26"], limit: 12 },
+                { name: "상인", cells: ["M26", "N26"], limit: 12 },
+                { name: "송현", cells: ["O26", "P26"], limit: 12 },
+                { name: "안지랑", cells: ["S26", "T26"], limit: 12 },
+                { name: "영대병원", cells: ["U26", "V26"], limit: 12 },
+                { name: "명덕", cells: ["W26", "X26"], limit: 14 },
+                { name: "반월당", cells: ["Y26", "Z26"], limit: 14 }
+            ]
+        },
+        line2: {
+            sheetName: "장비",
+            stations: [
+                { name: "문양", cells: ["E6", "E7"], limit: 10 },
+                { name: "다사", cells: ["E20", "E21"], limit: 10 },
+                { name: "대실", cells: ["E34", "E35"], limit: 10 },
+                { name: "계명", cells: ["J6", "J7"], limit: 12 },
+                { name: "성서산업단지", cells: ["J20", "J21"], limit: 12 },
+                { name: "용산", cells: ["J34", "J35"], limit: 12 },
+                { name: "죽전", cells: ["O6", "O7"], limit: 12 },
+                { name: "두류", cells: ["O20", "O21"], limit: 12 },
+                { name: "반월당", cells: ["O34", "O35"], limit: 15 }
+            ]
+        }
+    };
+
+    document.getElementById('excelFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const data = evt.target.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            analyzeData(workbook);
+        };
+        reader.readAsBinaryString(file);
+    });
+
+    function analyzeData(workbook) {
+        let activeConfig = null;
+        let sheet = null;
+
+        // 시트 존재 여부로 1호선/2호선 판별
+        if (workbook.SheetNames.includes(config.line1.sheetName)) {
+            activeConfig = config.line1;
+            document.getElementById('lineTitle').innerText = "1호선 냉동기 가동 현황 분석";
+        } else if (workbook.SheetNames.includes(config.line2.sheetName)) {
+            activeConfig = config.line2;
+            document.getElementById('lineTitle').innerText = "2호선 냉동기 가동 현황 분석";
+        } else {
+            alert("적절한 가동일보 시트를 찾을 수 없습니다. (가동시간 또는 장비 시트 필요)");
+            return;
+        }
+
+        sheet = workbook.Sheets[activeConfig.sheetName];
+        const tbody = document.getElementById('resultBody');
+        tbody.innerHTML = "";
+
+        activeConfig.stations.forEach(st => {
+            let totalHours = 0;
+            let hasHardware = false;
+
+            st.cells.forEach(cellAddr => {
+                const cell = sheet[cellAddr];
+                if (cell && cell.v !== undefined) {
+                    // 엑셀 시간(날짜형식)은 1일=1인 실수이므로 24를 곱함
+                    const val = parseFloat(cell.v);
+                    if (!isNaN(val) && val > 0) {
+                        totalHours += (val * 24);
+                        hasHardware = true;
+                    } else if (val === 0) {
+                        hasHardware = true;
+                    }
+                }
+            });
+
+            const tr = document.createElement('tr');
+            let statusHtml = "";
+            const displayHours = totalHours.toFixed(1);
+
+            if (!hasHardware) {
+                statusHtml = `<td class="status-none">-</td><td>-</td><td class="status-none">-</td>`;
+            } else if (totalHours > st.limit) {
+                statusHtml = `<td>${displayHours}</td><td>${st.limit}</td><td class="status-error">이상 (시간 초과)</td>`;
+            } else {
+                statusHtml = `<td>${displayHours}</td><td>${st.limit}</td><td class="status-normal">정상</td>`;
+            }
+
+            tr.innerHTML = `<td>${st.name}</td>` + statusHtml;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('resultArea').style.display = "block";
+    }
+</script>
+
+</body>
+</html>
