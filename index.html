@@ -3,42 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대구교통공사 냉동기 점검 시스템</title>
+    <title>대구교통공사 냉동기 가동 점검</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f4f7f9; }
-        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #0054a6; text-align: center; border-bottom: 2px solid #0054a6; padding-bottom: 10px; }
-        .upload-box { border: 2px dashed #0054a6; padding: 40px; text-align: center; border-radius: 10px; margin-bottom: 20px; cursor: pointer; }
-        .upload-box:hover { background-color: #eef5ff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-        th { background-color: #0054a6; color: white; }
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f0f2f5; color: #333; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h2 { color: #0054a6; text-align: center; border-bottom: 2px solid #0054a6; padding-bottom: 15px; margin-bottom: 25px; }
+        .upload-section { border: 2px dashed #0054a6; padding: 40px; text-align: center; border-radius: 10px; margin-bottom: 20px; cursor: pointer; background-color: #fdfdfd; }
+        .upload-section:hover { background-color: #f1f7ff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #0054a6; color: white; position: sticky; top: 0; }
         .status-error { background-color: #ffe6e6; color: #d93d30; font-weight: bold; }
-        .status-none { color: #aaa; background-color: #fafafa; }
-        .line-tag { display: inline-block; padding: 5px 15px; border-radius: 20px; color: white; font-weight: bold; margin-bottom: 10px; }
+        .status-none { color: #ccc; }
+        .line-info-tag { display: inline-block; padding: 6px 20px; border-radius: 50px; color: white; font-weight: bold; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>냉동기 가동시간 이상 점검 (1, 2호선 전용)</h2>
-    <div class="upload-box" onclick="document.getElementById('excelFile').click()">
-        <strong>가동일보 엑셀 파일을 선택하세요</strong>
-        <p>1호선(가동시간 시트) / 2호선(장비 시트) 자동 인식</p>
+    <h2>냉동기 가동시간 이상 점검 (전체 역사)</h2>
+    
+    <div class="upload-section" onclick="document.getElementById('excelFile').click()">
+        <strong>가동일보 엑셀(XLS/XLSX)을 업로드하세요.</strong>
+        <p style="font-size: 0.9em; color: #666;">1호선(가동시간), 2호선(장비), 공통(냉동기) 시트 자동 분석</p>
         <input type="file" id="excelFile" style="display:none;" accept=".xls, .xlsx" />
     </div>
 
     <div id="resultArea" style="display:none;">
-        <div id="lineBadge" class="line-tag"></div>
+        <div id="lineBadge" class="line-info-tag"></div>
         <table>
             <thead>
                 <tr>
-                    <th style="width:50px;">순번</th>
+                    <th style="width: 45px;">순번</th>
                     <th>역사명</th>
-                    <th>가동시간 합계(h)</th>
+                    <th>냉동기 가동시간 합계(h)</th>
                     <th>기준값(h)</th>
-                    <th>상태</th>
+                    <th>상태 결과</th>
                 </tr>
             </thead>
             <tbody id="resultBody"></tbody>
@@ -47,8 +48,8 @@
 </div>
 
 <script>
-    // 1호선 전체 역사 (설화명곡 ~ 하양) - 3호선 환승역인 명덕, 반월당 포함
-    const line1Stations = [
+    // 1호선 전체 역사 (설화명곡 ~ 하양) - 가로형 배열 반영
+    const line1Map = [
         { name: "설화명곡", cells: ["E26", "F26"], limit: 12 }, { name: "화원", cells: ["G26", "H26"], limit: 12 },
         { name: "대곡", cells: ["I26", "J26"], limit: 12 }, { name: "진천", cells: ["K26", "L26"], limit: 12 },
         { name: "월배", cells: ["M26", "N26"], limit: 12 }, { name: "상인", cells: ["O26", "P26"], limit: 12 },
@@ -62,11 +63,11 @@
         { name: "아양교", cells: [], limit: 0 }, { name: "동촌", cells: [], limit: 0 }, { name: "해안", cells: [], limit: 0 },
         { name: "방촌", cells: [], limit: 0 }, { name: "용계", cells: [], limit: 0 }, { name: "율하", cells: [], limit: 0 },
         { name: "신기", cells: [], limit: 0 }, { name: "반야월", cells: [], limit: 0 }, { name: "각산", cells: [], limit: 0 },
-        { name: "안심", cells: [], limit: 0 }, { name: "대구한의대병원", cells: [], limit: 0 }, { name: "부호경일대", cells: [], limit: 0 }, { name: "하양대구가톨릭대", cells: [], limit: 0 }
+        { name: "안심", cells: [], limit: 0 }, { name: "대구한의대병원", cells: [], limit: 0 }, { name: "부호경일대", cells: [], limit: 0 }, { name: "하양대구가톨릭대", cells: [] , limit: 0}
     ];
 
-    // 2호선 전체 역사 (문양 ~ 영남대) - 3호선 역사 완전 제거
-    const line2Stations = [
+    // 2호선 전체 역사 (문양 ~ 영남대) - 블록형 배열 반영
+    const line2Map = [
         { name: "문양", cells: ["E6", "E7"], limit: 10 }, { name: "다사", cells: ["E20", "E21"], limit: 10 },
         { name: "대실", cells: ["E34", "E35"], limit: 10 }, { name: "강창", cells: ["E48", "E49"], limit: 10 },
         { name: "계명대", cells: ["J6", "J7"], limit: 12 }, { name: "성서산업단지", cells: ["J20", "J21"], limit: 12 },
@@ -89,65 +90,77 @@
         reader.onload = function(evt) {
             const data = evt.target.result;
             const workbook = XLSX.read(data, { type: 'binary' });
-            processData(workbook);
+            analyzeWorkbook(workbook);
         };
         reader.readAsBinaryString(file);
     });
 
-    function processData(workbook) {
-        let stations = [];
+    function analyzeWorkbook(workbook) {
+        let activeStations = [];
         let sheetName = "";
-        let lineName = "";
-        let color = "";
+        let lineLabel = "";
+        let themeColor = "";
 
+        // 시트 감지 로직 (가동시간/장비/냉동기)
         if (workbook.SheetNames.includes("가동시간")) {
-            stations = line1Stations;
+            activeStations = line1Map;
             sheetName = "가동시간";
-            lineName = "1호선 (설화명곡 ~ 하양)";
-            color = "#d93d30"; // 1호선 빨간색
+            lineLabel = "1호선 (설화명곡 ~ 하양)";
+            themeColor = "#d93d30";
         } else if (workbook.SheetNames.includes("장비")) {
-            stations = line2Stations;
+            activeStations = line2Map;
             sheetName = "장비";
-            lineName = "2호선 (문양 ~ 영남대)";
-            color = "#00aa3c"; // 2호선 초록색
+            lineLabel = "2호선 (문양 ~ 영남대)";
+            themeColor = "#00aa3c";
+        } else if (workbook.SheetNames.includes("냉동기")) {
+            // "냉동기"라는 이름의 시트가 있을 경우에도 처리 (파일 내용에 따라 호선 자동 판별 필요하나 기본 1호선 구조 가정)
+            activeStations = line1Map; 
+            sheetName = "냉동기";
+            lineLabel = "기계분야 냉동기 시트 분석";
+            themeColor = "#0054a6";
         } else {
-            alert("시트 이름이 '가동시간'(1호선) 또는 '장비'(2호선)인 파일을 올려주세요.");
+            alert("냉동기 데이터를 확인할 수 있는 시트가 없습니다.");
             return;
         }
 
         const badge = document.getElementById('lineBadge');
-        badge.innerText = lineName;
-        badge.style.backgroundColor = color;
+        badge.innerText = lineLabel;
+        badge.style.backgroundColor = themeColor;
 
         const sheet = workbook.Sheets[sheetName];
         const tbody = document.getElementById('resultBody');
         tbody.innerHTML = "";
 
-        stations.forEach((st, idx) => {
-            let total = 0;
-            let hasData = false;
+        activeStations.forEach((st, idx) => {
+            let totalVal = 0;
+            let foundData = false;
 
             if (st.cells.length > 0) {
-                st.cells.forEach(c => {
-                    const cell = sheet[c];
+                st.cells.forEach(cellId => {
+                    const cell = sheet[cellId];
                     if (cell && cell.v !== undefined) {
-                        total += (parseFloat(cell.v) * 24);
-                        hasData = true;
+                        const numericVal = parseFloat(cell.v);
+                        if (!isNaN(numericVal)) {
+                            totalVal += (numericVal * 24); // 엑셀 시간값을 시간 단위로 변환
+                            foundData = true;
+                        }
                     }
                 });
             }
 
-            const isError = hasData && total > st.limit;
             const tr = document.createElement('tr');
+            const isOverLimit = foundData && totalVal > st.limit;
             
+            let statusDisp = "정상";
+            if (!foundData) statusDisp = "-";
+            else if (isOverLimit) statusDisp = "이상 (초과)";
+
             tr.innerHTML = `
                 <td>${idx + 1}</td>
-                <td>${st.name}</td>
-                <td class="${!hasData ? 'status-none' : ''}">${hasData ? total.toFixed(2) : '-'}</td>
+                <td style="text-align: left; padding-left: 20px;">${st.name}</td>
+                <td class="${!foundData ? 'status-none' : ''}">${foundData ? totalVal.toFixed(2) : '-'}</td>
                 <td class="${st.limit === 0 ? 'status-none' : ''}">${st.limit > 0 ? st.limit : '-'}</td>
-                <td class="${isError ? 'status-error' : (!hasData ? 'status-none' : '')}">
-                    ${!hasData ? '-' : (isError ? '이상(초과)' : '정상')}
-                </td>
+                <td class="${isOverLimit ? 'status-error' : (!foundData ? 'status-none' : '')}">${statusDisp}</td>
             `;
             tbody.appendChild(tr);
         });
