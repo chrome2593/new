@@ -3,44 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>냉동기 가동시간 분석 시스템</title>
+    <title>냉동기 가동시간 점검 시스템</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f8f9fa; color: #333; }
-        .container { max-width: 1000px; margin: auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h2 { color: #0054a6; text-align: center; border-bottom: 2px solid #0054a6; padding-bottom: 15px; margin-bottom: 20px; }
-        .file-upload { border: 2px dashed #0054a6; padding: 30px; text-align: center; border-radius: 10px; margin-bottom: 30px; cursor: pointer; }
-        .file-upload:hover { background-color: #f1f7ff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
-        th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        .line-1-header { border-top: 3px solid #d93d30; } /* 1호선 색상 */
-        .line-2-header { border-top: 3px solid #00aa3c; } /* 2호선 색상 */
-        .status-error { color: #d93d30; font-weight: bold; background-color: #fff0f0; }
-        .status-none { color: #aaa; }
-        .summary { margin-bottom: 10px; font-weight: bold; color: #555; }
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f4f7f9; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #0054a6; text-align: center; margin-bottom: 10px; }
+        .file-input-wrapper { text-align: center; border: 2px dashed #0054a6; padding: 40px; border-radius: 10px; margin-bottom: 20px; cursor: pointer; transition: 0.3s; }
+        .file-input-wrapper:hover { background-color: #eef5ff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; word-break: keep-all; }
+        th { background-color: #0054a6; color: white; font-size: 0.9em; }
+        .status-error { background-color: #ffe6e6; color: #d93d30; font-weight: bold; }
+        .status-none { color: #ccc; }
+        .line-info { margin-bottom: 15px; font-weight: bold; font-size: 1.1em; color: #333; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>가동일보 냉동기 가동시간 점검</h2>
+    <h1>냉동기 가동시간 이상 점검</h1>
     
-    <div class="file-upload" onclick="document.getElementById('excelFile').click()">
-        <strong>가동일보 파일(Excel)을 클릭하여 선택하거나 여기로 드래그하세요.</strong>
+    <div class="file-input-wrapper" onclick="document.getElementById('excelFile').click()">
+        <strong>가동일보 엑셀 파일을 업로드하세요.</strong>
+        <p style="color: #666; font-size: 0.9em;">(1호선: 가동시간 시트 / 2호선: 장비 시트 자동 감지)</p>
         <input type="file" id="excelFile" style="display:none;" accept=".xls, .xlsx" />
     </div>
 
     <div id="resultArea" style="display:none;">
-        <div class="summary" id="fileInfo"></div>
-        <table id="resultTable">
+        <div id="activeLine" class="line-info"></div>
+        <table>
             <thead>
-                <tr id="tableHeaderLine">
-                    <th>순번</th>
+                <tr>
+                    <th style="width: 50px;">순번</th>
                     <th>역사명</th>
-                    <th>가동시간 합계 (h)</th>
-                    <th>기준값 (h)</th>
-                    <th>상태</th>
+                    <th>가동시간 합계(h)</th>
+                    <th>기준값(h)</th>
+                    <th>판단 결과</th>
                 </tr>
             </thead>
             <tbody id="resultBody"></tbody>
@@ -49,8 +48,8 @@
 </div>
 
 <script>
-    // 1호선 역사 리스트 및 기준 데이터 (설화명곡 ~ 하양)
-    const line1Stations = [
+    // 사진 데이터 기반 역사별 셀 위치 및 기준치 (전체 역사 순서)
+    const line1Data = [
         { name: "설화명곡", cells: ["E26", "F26"], limit: 12 }, { name: "화원", cells: ["G26", "H26"], limit: 12 },
         { name: "대곡", cells: ["I26", "J26"], limit: 12 }, { name: "진천", cells: ["K26", "L26"], limit: 12 },
         { name: "월배", cells: ["M26", "N26"], limit: 12 }, { name: "상인", cells: ["O26", "P26"], limit: 12 },
@@ -59,19 +58,15 @@
         { name: "안지랑", cells: ["Y26", "Z26"], limit: 12 }, { name: "현충로", cells: ["AA26", "AB26"], limit: 12 },
         { name: "영대병원", cells: ["AC26", "AD26"], limit: 12 }, { name: "교대", cells: ["AE26", "AF26"], limit: 12 },
         { name: "명덕", cells: ["AG26", "AH26"], limit: 14 }, { name: "반월당", cells: ["AI26", "AJ26"], limit: 14 },
-        { name: "중앙로", cells: [], limit: 0 }, { name: "대구역", cells: [], limit: 0 },
-        { name: "칠성시장", cells: [], limit: 0 }, { name: "신천", cells: [], limit: 0 },
-        { name: "동대구역", cells: [], limit: 0 }, { name: "동구청", cells: [], limit: 0 },
-        { name: "아양교", cells: [], limit: 0 }, { name: "동촌", cells: [], limit: 0 },
-        { name: "해안", cells: [], limit: 0 }, { name: "방촌", cells: [], limit: 0 },
-        { name: "용계", cells: [], limit: 0 }, { name: "율하", cells: [], limit: 0 },
-        { name: "신기", cells: [], limit: 0 }, { name: "반야월", cells: [], limit: 0 },
-        { name: "각산", cells: [], limit: 0 }, { name: "안심", cells: [], limit: 0 },
-        { name: "대구한의대병원", cells: [], limit: 0 }, { name: "부호경일대대구가톨릭대", cells: [], limit: 0 }, { name: "하양대구가톨릭대", cells: [], limit: 0 }
+        { name: "중앙로", cells: [], limit: 0 }, { name: "대구역", cells: [], limit: 0 }, { name: "칠성시장", cells: [], limit: 0 },
+        { name: "신천", cells: [], limit: 0 }, { name: "동대구역", cells: [], limit: 0 }, { name: "동구청", cells: [], limit: 0 },
+        { name: "아양교", cells: [], limit: 0 }, { name: "동촌", cells: [], limit: 0 }, { name: "해안", cells: [], limit: 0 },
+        { name: "방촌", cells: [], limit: 0 }, { name: "용계", cells: [], limit: 0 }, { name: "율하", cells: [], limit: 0 },
+        { name: "신기", cells: [], limit: 0 }, { name: "반야월", cells: [], limit: 0 }, { name: "각산", cells: [], limit: 0 },
+        { name: "안심", cells: [], limit: 0 }, { name: "대구한의대병원", cells: [], limit: 0 }, { name: "부호", cells: [], limit: 0 }, { name: "하양", cells: [], limit: 0 }
     ];
 
-    // 2호선 역사 리스트 및 기준 데이터 (문양 ~ 영남대)
-    const line2Stations = [
+    const line2Data = [
         { name: "문양", cells: ["E6", "E7"], limit: 10 }, { name: "다사", cells: ["E20", "E21"], limit: 10 },
         { name: "대실", cells: ["E34", "E35"], limit: 10 }, { name: "강창", cells: ["E48", "E49"], limit: 10 },
         { name: "계명대", cells: ["J6", "J7"], limit: 12 }, { name: "성서산업단지", cells: ["J20", "J21"], limit: 12 },
@@ -80,12 +75,10 @@
         { name: "두류", cells: ["O34", "O35"], limit: 12 }, { name: "내당", cells: ["O48", "O49"], limit: 12 },
         { name: "반고개", cells: ["T6", "T7"], limit: 12 }, { name: "청라언덕", cells: ["T20", "T21"], limit: 12 },
         { name: "반월당", cells: ["T34", "T35"], limit: 15 }, { name: "경대병원", cells: ["T48", "T49"], limit: 12 },
-        { name: "범어", cells: [], limit: 0 }, { name: "수성구청", cells: [], limit: 0 },
-        { name: "만촌", cells: [], limit: 0 }, { name: "담티", cells: [], limit: 0 },
-        { name: "연호", cells: [], limit: 0 }, { name: "대공원", cells: [], limit: 0 },
-        { name: "고산", cells: [], limit: 0 }, { name: "신매", cells: [], limit: 0 },
-        { name: "사월", cells: [], limit: 0 }, { name: "정평", cells: [], limit: 0 },
-        { name: "임당", cells: [], limit: 0 }, { name: "영남대", cells: [], limit: 0 }
+        { name: "범어", cells: [], limit: 0 }, { name: "수성구청", cells: [], limit: 0 }, { name: "만촌", cells: [], limit: 0 },
+        { name: "담티", cells: [], limit: 0 }, { name: "연호", cells: [], limit: 0 }, { name: "대공원", cells: [], limit: 0 },
+        { name: "고산", cells: [], limit: 0 }, { name: "신매", cells: [], limit: 0 }, { name: "사월", cells: [], limit: 0 },
+        { name: "정평", cells: [], limit: 0 }, { name: "임당", cells: [], limit: 0 }, { name: "영남대", cells: [], limit: 0 }
     ];
 
     document.getElementById('excelFile').addEventListener('change', function(e) {
@@ -96,65 +89,66 @@
         reader.onload = function(evt) {
             const data = evt.target.result;
             const workbook = XLSX.read(data, { type: 'binary' });
-            processWorkbook(workbook, file.name);
+            renderTable(workbook);
         };
         reader.readAsBinaryString(file);
     });
 
-    function processWorkbook(workbook, fileName) {
-        let activeStations = [];
+    function renderTable(workbook) {
+        let selectedLine = "";
+        let stations = [];
         let sheetName = "";
-        let headerClass = "";
 
+        // 호선 판별 로직
         if (workbook.SheetNames.includes("가동시간")) {
-            activeStations = line1Stations;
+            selectedLine = "1호선 (설화명곡 ~ 하양)";
+            stations = line1Data;
             sheetName = "가동시간";
-            headerClass = "line-1-header";
-            document.getElementById('fileInfo').innerText = "분석 대상: 1호선 (" + fileName + ")";
         } else if (workbook.SheetNames.includes("장비")) {
-            activeStations = line2Stations;
+            selectedLine = "2호선 (문양 ~ 영남대)";
+            stations = line2Data;
             sheetName = "장비";
-            headerClass = "line-2-header";
-            document.getElementById('fileInfo').innerText = "분석 대상: 2호선 (" + fileName + ")";
         } else {
-            alert("일보 형식이 맞지 않습니다. '가동시간' 또는 '장비' 시트가 필요합니다.");
+            alert("냉동기 데이터를 추출할 수 없는 시트 형식입니다.");
             return;
         }
 
+        document.getElementById('activeLine').innerText = "현재 분석 호선: " + selectedLine;
         const sheet = workbook.Sheets[sheetName];
         const tbody = document.getElementById('resultBody');
-        const headerRow = document.getElementById('tableHeaderLine');
-        headerRow.className = headerClass;
         tbody.innerHTML = "";
 
-        activeStations.forEach((st, index) => {
+        stations.forEach((st, index) => {
             let totalHours = 0;
-            let hasData = false;
+            let hasDevice = st.cells.length > 0;
+            let actualDataFound = false;
 
-            if (st.cells.length > 0) {
-                st.cells.forEach(cellRef => {
-                    const cell = sheet[cellRef];
+            if (hasDevice) {
+                st.cells.forEach(cellAddr => {
+                    const cell = sheet[cellAddr];
                     if (cell && cell.v !== undefined) {
                         const val = parseFloat(cell.v);
                         if (!isNaN(val)) {
-                            totalHours += (val * 24); // 엑셀 시간 형식을 시간 단위로 변환
-                            hasData = true;
+                            totalHours += (val * 24); // 엑셀 시간값을 시간단위로 변환
+                            actualDataFound = true;
                         }
                     }
                 });
             }
 
             const tr = document.createElement('tr');
-            const isError = hasData && totalHours > st.limit;
+            const isError = actualDataFound && totalHours > st.limit;
             
+            let statusText = "정상";
+            if (!hasDevice || !actualDataFound) statusText = "-";
+            else if (isError) statusText = "이상 (초과)";
+
             tr.innerHTML = `
                 <td>${index + 1}</td>
                 <td>${st.name}</td>
-                <td class="${hasData ? '' : 'status-none'}">${hasData ? totalHours.toFixed(1) : '-'}</td>
-                <td class="${st.limit > 0 ? '' : 'status-none'}">${st.limit > 0 ? st.limit : '-'}</td>
-                <td class="${isError ? 'status-error' : (hasData ? '' : 'status-none')}">
-                    ${!hasData ? '-' : (isError ? '이상 (시간 초과)' : '정상')}
-                </td>
+                <td class="${!actualDataFound ? 'status-none' : ''}">${actualDataFound ? totalHours.toFixed(2) : '-'}</td>
+                <td class="${st.limit === 0 ? 'status-none' : ''}">${st.limit > 0 ? st.limit : '-'}</td>
+                <td class="${isError ? 'status-error' : (!actualDataFound ? 'status-none' : '')}">${statusText}</td>
             `;
             tbody.appendChild(tr);
         });
